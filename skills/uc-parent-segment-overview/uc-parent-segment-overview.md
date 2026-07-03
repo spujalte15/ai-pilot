@@ -36,6 +36,8 @@ This skill adds multi-segment overview framing. Do NOT modify `parent-segment-an
 
 > **Tracking table:** Ticket specifies `{customer_slug}_ai_poc_tracking.skill_usage`.
 > This skill standardises to `ai_usage.skills_usage_tracker` per ARCH-1335 platform pattern.
+> Reason: `customer_slug` is not reliably available as a variable in Treasure AI Studio at
+> runtime, making per-customer-slug table creation impractical in TAS.
 
 > **CDN note:** Generated HTML uses Chart.js CDN. Open in external browser — Treasure Work's
 > built-in file viewer is sandboxed and will show blank charts.
