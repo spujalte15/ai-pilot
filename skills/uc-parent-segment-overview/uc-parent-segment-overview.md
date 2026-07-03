@@ -193,10 +193,21 @@ The pulled YAML files in `segments/<ps_name>/` contain `activations:` blocks wit
 - `schedule.type` — none | daily | hourly | cron
 - `connector_config` — connector-specific settings
 
+Parse the activation YAML for each segment now, then clean up:
+
+```bash
+# Clean up pulled YAML files — not needed after activation data is extracted
+rm -rf segments/
+```
+
+> This prevents thousands of YAML files from accumulating in the CWD across multiple segment runs.
+
 Also run to confirm connections exist:
 ```bash
 tdx connection list 2>&1
 ```
+
+For each activation in the segment YAML, look up `activations[].connection` (the connection name) in the `tdx connection list` output. The `type` column in that output is the connector type (e.g. `sfmc_out`, `google_ads_out`, `salesforce_crm_out`). Set `activation.type` = that connector type. If the connection name is not found in the list, set `type = "unknown"`.
 
 This gives you **batch activation config** (connector type inferred from connection name + `tdx connection list` output).
 
@@ -204,6 +215,8 @@ This gives you **batch activation config** (connector type inferred from connect
 > only config is in the YAML. Show config only for batch activations.
 
 ### 2c — RT Activation Status (`realtime-skills:activations` patterns)
+
+> **`<SEGMENT_ID>` = parent segment ID from `tdx ps list` (Step 1) — not a child segment ID.**
 
 Check if an RT database exists for this segment:
 
@@ -236,36 +249,19 @@ For consecutive failures, use `realtime-skills:rt-journey-monitor` pattern:
 tdx query --database cdp_audience_<SEGMENT_ID>_rt \
   "SELECT activation_name, COUNT(*) as consecutive_failures
    FROM (
-     SELECT activation_name, delivered, time,
+     SELECT activation_name,
        SUM(CASE WHEN delivered='true' THEN 1 ELSE 0 END)
          OVER (PARTITION BY activation_name ORDER BY time DESC) as cumulative_success
      FROM activations
-     ORDER BY time DESC
-   ) WHERE cumulative_success = 0
+     WHERE td_interval(time, '-30d')
+   ) t
+   WHERE t.cumulative_success = 0
    GROUP BY activation_name" 2>&1
 ```
 
 Store per segment: `activations: [{name, type, isRT, schedule, consecutiveFailures, lastAttempt, lastStatus, lastError}]`
 
-```bash
-export TDX_ACCESS_TOKEN=$(curl -sf http://172.30.0.1:18080/credentials/td_api_production_eu01)
-export TDX_SITE=eu01
-
-# IMPORTANT: set context before listing child segments
-tdx ps use "<SEGMENT_NAME>" 2>/dev/null
-tdx sg list --json 2>&1
-```
-
-From the output, extract only `type: "segment"` entries (skip folders):
-- `id`, `name`, `population`, `createdAt`, `updatedAt`
-
-> **createdBy not available:** `tdx sg list --json` does not return a `createdBy` or author field.
-> The Activity Feed will show creation time and size only — not who created the segment.
-> This is a CLI data gap, not a skill bug.
-
-> **Context side effect:** After running `tdx ps use` N times, the session context will be set
-> to the last segment processed. If you need to run other commands after this skill completes,
-> be aware of this. Run `tdx ps use ""` or start a new session to clear context.
+> **Derive `lastStatus`:** If `consecutiveFailures = 0` AND `successes > 0`, set `lastStatus = "true"`. If `consecutiveFailures > 0`, set `lastStatus = "false"`. Otherwise `null`.
 
 **Freshness calculation** (compute per segment):
 
@@ -333,7 +329,7 @@ Build `ANOMALIES` list automatically — no user prompting needed:
 | `manual_segment_stale` | scheduleType = "none" AND health = RED | 🟡 AMBER | Note: may be intentional |
 | `rt_activation_failures` | consecutiveFailures > 0 on RT activation | 🔴 RED | RT segments only |
 | `rt_activation_all_failing` | All attempts in last 7d failed | 🔴 RED | RT segments only |
-| `batch_activation_no_schedule` | Batch activation schedule.type = "none" on active segment | 🟡 AMBER | Config check via tdx sg pull |
+| `batch_activation_no_schedule` | Batch activation schedule.type = 'none' AND run_after_journey_refresh ≠ true AND parent scheduleType ≠ 'none' | 🟡 AMBER | Config check via tdx sg pull. Activations with `run_after_journey_refresh: true` have `schedule.type: none` by design — do not flag these. |
 | `child_size_outlier` | N/A — no historical baseline | ⚪ SKIP | Requires multiple runs |
 
 For each non-SKIP anomaly record: `{segmentName, segmentId, anomalyType, detail, severity}`
@@ -344,6 +340,11 @@ For each non-SKIP anomaly record: `{segmentName, segmentId, anomalyType, detail,
 
 Build the complete `overviewData` object, then write the HTML file.
 Output filename: `ps_overview_<YYYYMMDD>.html`
+
+**Before running the Python block, build the `activations` array for each segment by merging Steps 2b and 2c:**
+1. From Step 2b YAML: for each entry in `activations:` block, create `{isRT: False, name, connection, type (from connection list lookup), scheduleType (from schedule.type), lastAttempt: None, lastStatus: None, consecutiveFailures: 0, lastError: None}`
+2. From Step 2c RT query: if `_rt.activations` table existed, merge RT data by `activation_name`: set `isRT: True`, update `lastAttempt`, `lastStatus`, `consecutiveFailures`, `lastError`. If an RT activation has no YAML match, add it as a new item with `isRT: True`.
+3. If neither step found activations, set `activations: []`.
 
 ```bash
 python3 << 'PYEOF'
@@ -374,6 +375,7 @@ overview_data = {
     #   "hoursSinceRefresh": 1234.5,
     #   "health": "AMBER",
     #   "childSegments": [{"id":"...","name":"...","population":0,"createdAt":"...","updatedAt":"..."}],
+    #   "childSegmentCount": 0,  # auto-derived from len(childSegments) — do not set manually
     #   "activations": [
     #     {
     #       "name": "export sfmc test",       # from YAML activations[].name
@@ -401,11 +403,15 @@ overview_data = {
 
 # Derive summary — do NOT leave as zeros
 segs = overview_data["segments"]
+# Derive childSegmentCount from array length
+for s in segs:
+    if "childSegmentCount" not in s:
+        s["childSegmentCount"] = len(s.get("childSegments", []))
 overview_data["totalSegments"]                   = len(segs)
 overview_data["summary"]["green"]                = sum(1 for s in segs if s["health"] == "GREEN")
 overview_data["summary"]["amber"]                = sum(1 for s in segs if s["health"] == "AMBER")
 overview_data["summary"]["red"]                  = sum(1 for s in segs if s["health"] == "RED")
-overview_data["summary"]["totalChildSegments"]   = sum(s.get("childSegmentCount", 0) for s in segs)
+overview_data["summary"]["totalChildSegments"]   = sum(len(s.get("childSegments", [])) for s in segs)
 overview_data["summary"]["totalPopulation"]      = sum(s.get("population", 0) for s in segs)
 overview_data["summary"]["anomalyCount"]         = len(overview_data["anomalies"])
 
@@ -498,6 +504,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
             padding:12px 16px;font-size:12px;color:#854d0e;margin-bottom:16px}
 .info-banner{background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;
              padding:12px 16px;font-size:12px;color:#1d4ed8;margin-bottom:16px}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 16px;margin-bottom:8px}
+.card-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.card-title{font-size:13px;font-weight:700;color:#1e1e2e}
+.card-db{font-size:11px;color:#6b7280;margin-left:auto}
 </style>
 </head>
 <body>
@@ -565,6 +575,16 @@ function openDrill(segId){
       <span style="color:#9ca3af;font-size:10px;white-space:nowrap">${relTime(c.createdAt)}</span>
     </div>`
   ).join("")||'<div style="color:#9ca3af;font-size:12px">No child segments</div>';
+  const actRows=(seg.activations||[]).map(a=>
+    `<div class="child-seg-row">
+      <span class="child-seg-name">${esc(a.name)}</span>
+      <span style="color:#6b7280;font-size:11px">${esc(a.type||a.connection||'—')}</span>
+      <span style="font-size:10px">${a.isRT
+        ?(a.consecutiveFailures>0?`<span style="color:#EE2328">🔴 ${a.consecutiveFailures} failures</span>`
+          :(a.lastStatus==='true'?'<span style="color:#16a34a">✅ OK</span>':'—'))
+        :'<span style="color:#9ca3af">Config only</span>'}</span>
+    </div>`
+  ).join('')||'<div style="color:#9ca3af;font-size:12px">No activations configured</div>';
   const flags=(seg.qualityFlags||[]).map(f=>
     `<div style="font-size:12px;color:#dc2626;padding:3px 0">${esc(f.issue_type)}</div>`
   ).join("")||'<div style="font-size:12px;color:#16a34a">No quality flags</div>';
@@ -582,6 +602,9 @@ function openDrill(segId){
     </div>
     <div class="drill-section">
       <h3>Child Segments (${seg.childSegmentCount||0})</h3>${childRows}
+    </div>
+    <div class="drill-section">
+      <h3>Activations (${(seg.activations||[]).length})</h3>${actRows}
     </div>
     <div class="drill-section">
       <h3>Quality Flags</h3>${flags}
@@ -797,6 +820,8 @@ function buildActivation(){
           </div>`).join("")}
     </div>
 
+    ${noActSegs.length ? `<div style="color:#9ca3af;font-size:12px;padding:8px 0;border-top:1px solid #f3f4f6;margin-top:8px">${noActSegs.length} segment${noActSegs.length!==1?"s":""} have no activations configured.</div>` : ""}
+
     <div class="info-banner" style="margin-top:8px">
       ℹ️ <strong>Batch activation run history</strong> is not available via the tdx CLI —
       only configuration is shown. RT activation status comes from
@@ -962,6 +987,7 @@ tdx ps use "<name>"                   # set context (required before tdx sg comm
 tdx sg list --json                    # child segments (requires ps context)
 tdx sg pull --yes                     # pull segment YAMLs incl. activations: block
 tdx connection list                   # list all configured connections (name + type)
+# Note: verify this command is available in your TAS environment before relying on it
 ```
 
 **Activation data sources:**
