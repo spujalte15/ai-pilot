@@ -10,7 +10,7 @@
   },
   "plugins": [
     {
-      "name": "poc-skills",
+      "name": "ai-pilot-eu",
       "description": "Customer-facing Data Ops POC skills for Treasure AI Studio. Covers full pipeline lineage tracing, data quality, and transformation dashboards. Each skill generates a self-contained HTML dashboard and logs usage to ai_usage.skills_usage_tracker on eu01.",
       "source": "./",
       "strict": false,

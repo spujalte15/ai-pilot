@@ -18,7 +18,7 @@ To load these skills in Treasure Work or Treasure AI Studio, add the following t
 ```json
 {
   "source": "github:treasure-data/ai-pilot-eu",
-  "plugin": "poc-skills"
+  "plugin": "ai-pilot-eu"
 }
 ```
 
@@ -26,7 +26,7 @@ Or clone and load locally:
 ```json
 {
   "source": "./path/to/ai-pilot-eu",
-  "plugin": "poc-skills"
+  "plugin": "ai-pilot-eu"
 }
 ```
 
