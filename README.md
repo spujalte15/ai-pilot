@@ -8,6 +8,7 @@ Built for the AI POC framework — Data Ops skill build phase (Weeks 4–6).
 | Skill | JIRA | Description |
 |---|---|---|
 | `uc-data-lineage` | [ARCH-1335](https://treasure-data.atlassian.net/browse/ARCH-1335) | Full pipeline lineage from raw CDP landing to parent segment — interactive HTML dashboard |
+| `uc-data-quality-monitor` | [ARCH-1325](https://treasure-data.atlassian.net/browse/ARCH-1325) | CDP data health monitoring — fill rate, row count trend, ID stitching coverage, dedup rate |
 | `skill-usage-tracker` | — | Skill usage tracking for Treasure Work (hooks) and TAS (inline Step 0 reference) |
 
 ## Adding to Marketplace
