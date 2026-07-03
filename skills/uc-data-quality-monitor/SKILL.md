@@ -56,13 +56,10 @@ Call `mcp__tas__request_credential` with `td_api_production_eu01`.
 Wait for the green "Authenticated" confirmation before proceeding.
 **Do not run any bash until this succeeds.**
 
-### 0b — Call skill-usage-tracker (separate Skill tool call — do NOT combine with Step 1 or any other step)
+### 0b — Log invocation (separate bash call — do NOT combine with Step 1 or any other step)
 
-Invoke the `skill-usage-tracker` skill. It handles writing the tracking row to
-`ai_usage.skills_usage_tracker`. Wait for it to complete before continuing.
-
-If `skill-usage-tracker` is not available, run this inline fallback as its own
-bash command — do not combine with Step 1 or any other step:
+> **Treasure AI Studio note:** `skill-usage-tracker` hooks do NOT work in TAS. Run the inline
+> bash below directly. Do NOT call `skill-usage-tracker` as a Skill tool in TAS.
 
 ```bash
 export TDX_ACCESS_TOKEN=$(curl -sf http://172.30.0.1:18080/credentials/td_api_production_eu01)
@@ -194,6 +191,20 @@ tdx query --database <DB> \
 ```
 
 Classify against fill rate thresholds. Record each result in `FILL_RATE_RESULTS`.
+
+Write each fill rate result to `dq_metric_history` so `lastHealthy` queries and trend lines work:
+
+```bash
+export TDX_ACCESS_TOKEN=$(curl -sf http://172.30.0.1:18080/credentials/td_api_production_eu01)
+export TDX_SITE=eu01
+RECORD_ID="<value from Step 0>"
+STATUS="<GREEN/AMBER/RED from classification above>"
+tdx query --database ai_usage \
+  "INSERT INTO dq_metric_history (run_id, table_fqn, check_type, column_name, metric_value, status) VALUES ('$RECORD_ID', '<DB>.<TABLE>', 'fill_rate', '<COLUMN>', <fill_rate_pct>, '$STATUS')" \
+  2>&1
+```
+
+> Run once per key column per table. Substitute `<COLUMN>`, `<fill_rate_pct>`, and `<STATUS>` with real values from the query result above.
 
 ---
 

@@ -49,13 +49,33 @@ Call `mcp__tas__request_credential` with credential name `td_api_production_eu01
 Wait for the green "Authenticated" confirmation before proceeding.
 Do not run any bash until this succeeds.
 
-### 0b — Call skill-usage-tracker (separate Skill tool call)
+### 0b — Log to tracking table (separate bash call — do NOT combine with Step 1 or Step 2)
 
-Invoke the `skill-usage-tracker` skill. It handles writing the tracking row to
-`ai_usage.skills_usage_tracker`. Wait for it to complete before continuing.
+> **Treasure AI Studio note:** `skill-usage-tracker` hooks do NOT work in TAS. Run the inline
+> bash below directly. Do NOT call `skill-usage-tracker` as a Skill tool in TAS.
 
-If `skill-usage-tracker` is not available, run this inline fallback as its own
-bash command — do not combine with Step 1 or Step 2:
+```bash
+export TDX_ACCESS_TOKEN=$(curl -sf http://172.30.0.1:18080/credentials/td_api_production_eu01)
+export TDX_SITE=eu01
+
+TD_STATUS=$(tdx status 2>/dev/null)
+USER_ID=$(echo "$TD_STATUS" | grep "^User:" | awk '{print $2}')
+ACCOUNT_ID=$(echo "$TD_STATUS" | grep "^Account ID:" | awk '{print $3}')
+RECORD_ID=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null || echo "$(date +%s)-$$")
+
+tdx api -X POST /v3/database/create/ai_usage 2>/dev/null || true
+tdx api -X POST /v3/table/create/ai_usage/skills_usage_tracker/log 2>/dev/null || true
+tdx api -X POST \
+  --data '{"schema":"[[\"id\",\"string\"],[\"user_id\",\"string\"],[\"account_id\",\"string\"],[\"skill_name\",\"string\"]]"}' \
+  /v3/table/update-schema/ai_usage/skills_usage_tracker 2>/dev/null || true
+
+tdx query --database ai_usage \
+  "INSERT INTO skills_usage_tracker (id, user_id, account_id, skill_name) VALUES ('$RECORD_ID', '$USER_ID', '$ACCOUNT_ID', 'uc-data-lineage')" \
+  2>&1
+
+echo "RECORD_ID=$RECORD_ID"
+echo "✅ Step 0 complete — uc-data-lineage invocation logged for $USER_ID (record: $RECORD_ID)"
+```
 
 ```bash
 export TDX_ACCESS_TOKEN=$(curl -sf http://172.30.0.1:18080/credentials/td_api_production_eu01)
