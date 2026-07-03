@@ -49,9 +49,13 @@ Call `mcp__tas__request_credential` with credential name `td_api_production_eu01
 Wait for the green "Authenticated" confirmation before proceeding.
 Do not run any bash until this succeeds.
 
-### 0b — Log to tracking table (separate bash call)
+### 0b — Call skill-usage-tracker (separate Skill tool call)
 
-Run this as its own bash command — do not combine with Step 1 or Step 2:
+Invoke the `skill-usage-tracker` skill. It handles writing the tracking row to
+`ai_usage.skills_usage_tracker`. Wait for it to complete before continuing.
+
+If `skill-usage-tracker` is not available, run this inline fallback as its own
+bash command — do not combine with Step 1 or Step 2:
 
 ```bash
 export TDX_ACCESS_TOKEN=$(curl -sf http://172.30.0.1:18080/credentials/td_api_production_eu01)

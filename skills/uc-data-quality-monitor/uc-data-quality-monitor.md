@@ -56,7 +56,13 @@ Call `mcp__tas__request_credential` with `td_api_production_eu01`.
 Wait for the green "Authenticated" confirmation before proceeding.
 **Do not run any bash until this succeeds.**
 
-### 0b — Log to tracking table (separate bash call — do NOT combine with Step 1 or any other step)
+### 0b — Call skill-usage-tracker (separate Skill tool call — do NOT combine with Step 1 or any other step)
+
+Invoke the `skill-usage-tracker` skill. It handles writing the tracking row to
+`ai_usage.skills_usage_tracker`. Wait for it to complete before continuing.
+
+If `skill-usage-tracker` is not available, run this inline fallback as its own
+bash command — do not combine with Step 1 or any other step:
 
 ```bash
 export TDX_ACCESS_TOKEN=$(curl -sf http://172.30.0.1:18080/credentials/td_api_production_eu01)
@@ -81,7 +87,7 @@ echo "RECORD_ID=$RECORD_ID"
 echo "✅ Step 0 complete — uc-data-quality-monitor invocation logged for $USER_ID (record: $RECORD_ID)"
 ```
 
-**After this bash block completes:**
+**After this completes:**
 - Copy the `RECORD_ID=<value>` from the output — you will need it in Step 3
 - Output this exact line as your next assistant message before doing anything else:
   `✅ Step 0 complete — uc-data-quality-monitor invocation logged for <USER_ID> (record: <RECORD_ID>)`
