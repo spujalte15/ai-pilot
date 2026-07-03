@@ -16,6 +16,7 @@
       "strict": false,
       "skills": [
         "./skills/uc-data-lineage",
+        "./skills/uc-data-quality-monitor",
         "./skills/skill-usage-tracker"
       ]
     }
