@@ -109,6 +109,8 @@ Ask the user these specific questions:
 | ID stitching coverage | < 70% | 70–90% |
 | Duplicate rate | > 1% | 0.5–1% |
 
+If the user provides custom thresholds, store them as `CUSTOM_THRESHOLDS` replacing the relevant default. Example: if user says "flag fill rate below 70% not 80%", store `CUSTOM_THRESHOLDS = {"fillRate": {"red": 70, "amber": 85}}`.
+
 Wait for user answers. Store as `TARGET_SEGMENT`, `BEHAVIOUR_TABLES`, `STAGING_DB`, `GOLDEN_DB`, `CUSTOM_THRESHOLDS`.
 
 **After Step 2 discovers tables, present the full list to the user and ask: "These are the tables I will monitor — confirm to proceed or adjust the scope."** Wait for confirmation before running health checks.
@@ -190,7 +192,7 @@ tdx query --database <DB> \
    FROM <TABLE>" 2>&1
 ```
 
-Classify against fill rate thresholds. Record each result in `FILL_RATE_RESULTS`.
+Classify against fill rate thresholds. Use CUSTOM_THRESHOLDS if provided, otherwise use defaults (RED < 80%, AMBER 80–95%). Record each result in `FILL_RATE_RESULTS`.
 
 Write each fill rate result to `dq_metric_history` so `lastHealthy` queries and trend lines work:
 
@@ -247,6 +249,7 @@ If no rows: `ROW_COUNT_HISTORY = []` — first run, baseline being established.
 Compute change vs previous run:
 - If `ROW_COUNT_HISTORY` has ≥1 entry: `prev = ROW_COUNT_HISTORY[0].metric_value`; `change_pct = (CURRENT_COUNT - prev) / prev * 100`
 - Flag: drop >10% → RED, drop 5–10% → AMBER, spike >50% → RED, spike 20–50% → AMBER, else → GREEN
+- If CUSTOM_THRESHOLDS.rowCountDrop was provided by the user, use those values instead.
 
 **Step B4 — Write current snapshot to history:**
 ```bash
@@ -296,6 +299,8 @@ tdx query --database ai_usage \
   2>&1
 ```
 
+If CUSTOM_THRESHOLDS.stitching was provided, use those values instead of the defaults.
+
 ---
 
 ### Check D — Duplicate Rate
@@ -320,6 +325,8 @@ tdx query --database ai_usage \
   "INSERT INTO dq_metric_history (run_id, table_fqn, check_type, column_name, metric_value, status) VALUES ('$RECORD_ID', '<DB>.<TABLE>', 'duplicate_rate', '<PRIMARY_KEY_COL>', <duplicate_rate_pct>, '<STATUS>')" \
   2>&1
 ```
+
+If CUSTOM_THRESHOLDS.duplicates was provided, use those values instead.
 
 ---
 
@@ -408,6 +415,9 @@ monitor_data = {
   "runDate":     RUN_DATE,
   "runId":       RECORD_ID,
   "databases":   ["<list of monitored databases>"],  # substitute
+  # IMPORTANT: If user provided CUSTOM_THRESHOLDS in Step 1, replace the
+  # default values below with the user's values before running this script.
+  # Example: if user said "flag fill rate below 70%", change "red": 80 → "red": 70
   "thresholds": {
     "fillRate":    {"red": 80,  "amber": 95},
     "rowCountDrop": {"red": 10, "amber": 5},
@@ -468,7 +478,8 @@ monitor_data["summary"]["red"]            = sum(1 for t in tables if t["overallS
 monitor_data["summary"]["totalAnomalies"] = len(monitor_data["anomalies"])
 monitor_data["summary"]["isFirstRun"]     = all(len(t.get("rowCountHistory", [])) == 0 for t in tables)
 
-json_str = json.dumps(monitor_data, ensure_ascii=False)
+json_str = json.dumps(monitor_data, ensure_ascii=True)
+json_str = json_str.replace("</script>", "<\\/script>")
 
 # ── HTML template — __MONITOR_DATA_JSON__ is the injection point ──────────
 html_template = r"""<!DOCTYPE html>

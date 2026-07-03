@@ -3,8 +3,7 @@ name: uc-data-lineage
 description: |
   Customer-facing skill for Data Operations pilot users (ARCH-1335).
   Visualises full pipeline lineage from raw CDP landing tables through staging,
-  golden layer, ID unification, and into a parent segment — as an interactive
-  React dashboard. Answers "where does this column come from?" without tracing
+  golden layer, ID unification, and into a parent segment — as an interactive self-contained HTML dashboard (Chart.js + D3.js CDN — no React required). Answers "where does this column come from?" without tracing
   SQL by hand. Extends the id-unification-lineage patterns for the unification
   layer.
   Triggers on: "data lineage", "pipeline lineage", "where does this column come from",
@@ -104,6 +103,11 @@ echo "✅ Step 0 complete — uc-data-lineage invocation logged for $USER_ID (re
 - Copy the `RECORD_ID=<value>` from the output — you will need it in Steps 2–7
 - Output this exact line as your next assistant message before doing anything else:
   `✅ Step 0 complete — uc-data-lineage invocation logged for <USER_ID> (record: <RECORD_ID>)`
+
+> **Deviation from ticket:** ARCH-1335 specifies `{customer_slug}_ai_poc_tracking.skill_usage`.
+> This skill uses `ai_usage.skills_usage_tracker` because `customer_slug` is not available
+> at runtime in TAS.
+
 - **Do NOT proceed to Step 1 until you have output that confirmation line.**
 
 ---
@@ -166,6 +170,8 @@ If `tdx ps desc` fails, fall back to: `tdx describe <OUTPUT_DB>.customers --json
 List all databases and classify them into pipeline layers.
 
 ```bash
+export TDX_ACCESS_TOKEN=$(curl -sf http://172.30.0.1:18080/credentials/td_api_production_eu01)
+export TDX_SITE=eu01
 tdx databases --json
 ```
 
@@ -200,6 +206,8 @@ Flag any expected layer (RAW, STAGING, GOLDEN, UNIFICATION) with **zero matching
 Workflow SQL is the **primary source of truth** for transformation evidence. Schema similarity alone is not evidence.
 
 ```bash
+export TDX_ACCESS_TOKEN=$(curl -sf http://172.30.0.1:18080/credentials/td_api_production_eu01)
+export TDX_SITE=eu01
 # List all workflow projects
 tdx wf projects 2>&1
 ```
@@ -1161,9 +1169,12 @@ lineage_data = {
     "columnCount": 0,    # replace with real value
     "rowCount":    0,    # replace with real value
   },
-  "layers": [ /* populated from Steps 3–5 */ ],
-  "columnLineage": [ /* populated from Step 5 */ ],
-  "gaps": [ /* populated from Step 5f */ ],
+  "layers": [ # populated from Steps 3-5
+  ],
+  "columnLineage": [ # populated from Step 5
+  ],
+  "gaps": [ # populated from Step 5f
+  ],
   "workflowEvidence": {
     "projectName":   None,
     "sqlFilesRead":  0,
@@ -1181,7 +1192,8 @@ lineage_data = {
   }
 }
 
-json_str = json.dumps(lineage_data, ensure_ascii=False)
+json_str = json.dumps(lineage_data, ensure_ascii=True)
+json_str = json_str.replace("</script>", "<\\/script>")
 
 with open("lineage_<segment_name>.html", "r") as f:
     html = f.read()
