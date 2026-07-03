@@ -24,12 +24,16 @@ This skill adds multi-segment overview framing. Do NOT modify `parent-segment-an
 
 ## ⚠️ Marketplace Skill Availability Notice
 
-| Skill | Status | Resolution |
+| Skill | Status | Usage in this skill |
 |---|---|---|
-| `tdx-skills:parent-segment-analysis` | ✅ Available | Used for single-segment drill-down |
+| `tdx-skills:parent-segment-analysis` | ✅ Available | Single-segment drill-down |
 | `tdx-skills:parent-segment` | ✅ Available | YAML/schedule patterns |
+| `tdx-skills:activation` | ✅ Available | Step 2b: `tdx sg pull --yes` to get batch activation config from YAML |
+| `tdx-skills:connector-config` | ✅ Available | Step 2b: `tdx connection list` to verify connections |
+| `realtime-skills:activations` | ✅ Available | Step 2c: query `cdp_audience_<id>_rt.activations` for RT run status |
+| `realtime-skills:rt-journey-monitor` | ✅ Available | Step 2c: RT activation failure detection patterns |
 | `tdx-skills:tdx-basic` | ✅ Available | Used throughout |
-| `sql-skills:trino` | ✅ Available | Freshness queries |
+| `sql-skills:trino` | ✅ Available | Freshness and activation queries |
 | `treasure-work-skills:react-dashboard` | ❌ NOT in TAS | Step 4 generates self-contained HTML (Chart.js CDN) |
 | `uc-rfm-segmentation` | ❌ NOT in repo or marketplace | Drill-down uses `tdx-skills:parent-segment-analysis` instead |
 | `uc-data-quality-monitor` | ✅ Available (this repo) | Step 3 queries `ai_usage.data_quality_flags` if present |
@@ -42,15 +46,21 @@ This skill adds multi-segment overview framing. Do NOT modify `parent-segment-an
 > **CDN note:** Generated HTML uses Chart.js CDN. Open in external browser — Treasure Work's
 > built-in file viewer is sandboxed and will show blank charts.
 
-> **Data gaps documented here — do NOT treat as bugs:**
+> **Activation data availability — two tiers:**
 >
-> | Data Point | Availability | Workaround |
+> | Activation Type | Config Available | Run Status Available | How |
+> |---|---|---|---|
+> | Batch (segment/journey) | ✅ via `tdx sg pull --yes` YAML | ❌ No run history in CLI | YAML shows connection, schedule, columns |
+> | RT 2.0 (journeys) | ✅ via RT journey config | ✅ `cdp_audience_<id>_rt.activations` table | `delivered`, `status`, `error`, `activation_type`, `last run time` |
+
+> **Remaining gaps (not fixable via CLI):**
+>
+> | Data Point | Status | Note |
 > |---|---|---|
-> | Activation connector type/destination/status | ❌ Not in tdx CLI | Activation Summary tab shows "not available via CLI" state with console link |
-> | Consecutive activation failures | ❌ Requires activation history | Anomaly flagged as "not detectable" with explanation |
-> | Last run success/fail per segment | ❌ Not in tdx ps list | Use `tdx wf sessions <workflow>` if workflow name known |
-> | Child segment author (createdBy) | ❌ Not in tdx sg list output | Activity Feed shows time + size only; createdBy omitted |
-> | Output database name | ✅ Via `tdx ps view` only | Step 1 calls tdx ps view for each segment |
+> | Batch activation run history | ❌ Not available | Show config only from YAML |
+> | Consecutive failures (batch) | ❌ Not available | Only detectable for RT via SQL |
+> | Child segment author (createdBy) | ❌ Not in tdx sg list | Show time + size only |
+> | Last PS workflow run status | ❌ Not in tdx ps | Use `tdx wf sessions` if workflow name known |
 
 ---
 
@@ -146,9 +156,96 @@ Store enriched list as `ALL_SEGMENTS`.
 
 ---
 
-## Step 2 — Enrich Each Segment with Child Segments
+## Step 2 — Enrich Each Segment
 
-For each segment in `ALL_SEGMENTS`:
+For each segment in `ALL_SEGMENTS` run sub-steps 2a, 2b, 2c.
+
+### 2a — Child Segments (`tdx-skills:segment` patterns)
+
+```bash
+export TDX_ACCESS_TOKEN=$(curl -sf http://172.30.0.1:18080/credentials/td_api_production_eu01)
+export TDX_SITE=eu01
+tdx ps use "<SEGMENT_NAME>" 2>/dev/null
+tdx sg list --json 2>&1
+```
+
+Extract only `type: "segment"` entries: `id`, `name`, `population`, `createdAt`, `updatedAt`.
+
+> `createdBy` is not in `tdx sg list` output — show time + size only in Activity Feed.
+
+> After running `tdx ps use` N times, the session context will be set to the last segment.
+> Run `tdx ps use ""` or start a new session after this skill completes if needed.
+
+### 2b — Activation Config (`tdx-skills:activation` patterns)
+
+Pull the segment YAML to get configured activations:
+
+```bash
+export TDX_ACCESS_TOKEN=$(curl -sf http://172.30.0.1:18080/credentials/td_api_production_eu01)
+export TDX_SITE=eu01
+tdx ps use "<SEGMENT_NAME>" 2>/dev/null
+tdx sg pull --yes 2>&1
+```
+
+The pulled YAML files in `segments/<ps_name>/` contain `activations:` blocks with:
+- `name` — activation name
+- `connection` — connector name
+- `schedule.type` — none | daily | hourly | cron
+- `connector_config` — connector-specific settings
+
+Also run to confirm connections exist:
+```bash
+tdx connection list 2>&1
+```
+
+This gives you **batch activation config** (connector type inferred from connection name + `tdx connection list` output).
+
+> Batch activation **run history** (last run time, success/fail) is NOT available via `tdx sg` —
+> only config is in the YAML. Show config only for batch activations.
+
+### 2c — RT Activation Status (`realtime-skills:activations` patterns)
+
+Check if an RT database exists for this segment:
+
+```bash
+export TDX_ACCESS_TOKEN=$(curl -sf http://172.30.0.1:18080/credentials/td_api_production_eu01)
+export TDX_SITE=eu01
+tdx tables "cdp_audience_<SEGMENT_ID>_rt.*" --json 2>&1 | grep "activations"
+```
+
+If `cdp_audience_<SEGMENT_ID>_rt.activations` exists, query it for run status:
+
+```bash
+tdx query --database cdp_audience_<SEGMENT_ID>_rt \
+  "SELECT
+     activation_name,
+     activation_type,
+     COUNT(*) as total_attempts,
+     SUM(CASE WHEN delivered='true' THEN 1 ELSE 0 END) as successes,
+     SUM(CASE WHEN delivered='false' THEN 1 ELSE 0 END) as failures,
+     td_time_string(MAX(time),'s!','UTC') as last_attempt,
+     MAX(CASE WHEN delivered='false' THEN error ELSE NULL END) as last_error
+   FROM activations
+   WHERE td_interval(time, '-7d')
+   GROUP BY activation_name, activation_type
+   ORDER BY last_attempt DESC" 2>&1
+```
+
+For consecutive failures, use `realtime-skills:rt-journey-monitor` pattern:
+```bash
+tdx query --database cdp_audience_<SEGMENT_ID>_rt \
+  "SELECT activation_name, COUNT(*) as consecutive_failures
+   FROM (
+     SELECT activation_name, delivered, time,
+       SUM(CASE WHEN delivered='true' THEN 1 ELSE 0 END)
+         OVER (PARTITION BY activation_name ORDER BY time DESC) as cumulative_success
+     FROM activations
+     ORDER BY time DESC
+   ) WHERE cumulative_success = 0
+   GROUP BY activation_name" 2>&1
+```
+
+Store per segment: `activations: [{name, type, isRT, schedule, consecutiveFailures, lastAttempt, lastStatus, lastError}]`
 
 ```bash
 export TDX_ACCESS_TOKEN=$(curl -sf http://172.30.0.1:18080/credentials/td_api_production_eu01)
@@ -234,8 +331,10 @@ Build `ANOMALIES` list automatically — no user prompting needed:
 | `no_child_segments` | childSegmentCount = 0 AND scheduleType ≠ "none" | 🟡 AMBER | — |
 | `quality_flags` | Any HIGH/CRITICAL in data_quality_flags | 🔴 RED | — |
 | `manual_segment_stale` | scheduleType = "none" AND health = RED | 🟡 AMBER | Note: may be intentional |
-| `activation_failures` | N/A — activation history not available via CLI | ⚪ SKIP | Documented gap: requires console access |
-| `child_size_outlier` | N/A — no historical child segment size baseline | ⚪ SKIP | Documented gap: baseline requires multiple runs |
+| `rt_activation_failures` | consecutiveFailures > 0 on RT activation | 🔴 RED | RT segments only |
+| `rt_activation_all_failing` | All attempts in last 7d failed | 🔴 RED | RT segments only |
+| `batch_activation_no_schedule` | Batch activation schedule.type = "none" on active segment | 🟡 AMBER | Config check via tdx sg pull |
+| `child_size_outlier` | N/A — no historical baseline | ⚪ SKIP | Requires multiple runs |
 
 For each non-SKIP anomaly record: `{segmentName, segmentId, anomalyType, detail, severity}`
 
@@ -275,7 +374,19 @@ overview_data = {
     #   "hoursSinceRefresh": 1234.5,
     #   "health": "AMBER",
     #   "childSegments": [{"id":"...","name":"...","population":0,"createdAt":"...","updatedAt":"..."}],
-    #   "childSegmentCount": 3,
+    #   "activations": [
+    #     {
+    #       "name": "export sfmc test",       # from YAML activations[].name
+    #       "connection": "spujalte_sfmc",    # from YAML activations[].connection
+    #       "type": "sfmc_out",               # inferred from tdx connection list type
+    #       "scheduleType": "none",           # from YAML activations[].schedule.type
+    #       "isRT": False,                    # True if from _rt.activations table
+    #       "lastAttempt": None,              # RT only: td_time_string MAX(time)
+    #       "lastStatus": None,               # RT only: delivered true/false
+    #       "consecutiveFailures": 0,         # RT only: computed via window SQL
+    #       "lastError": None                 # RT only: last error text
+    #     }
+    #   ],
     #   "hasQualityFlags": False,
     #   "qualityFlags": [],
     #   "url": "https://console-next.eu01.treasuredata.com/app/dw/parentSegments/1087307"
@@ -594,46 +705,107 @@ function applyFilter(){currentPage=0;renderSegGrid();}
 // ── Tab: Activation Summary ─────────────────────────────────────────────────
 function buildActivation(){
   const panel=document.getElementById("tab-activation");
+
+  // Collect all segments that have activation data
+  const segsWithActs = D.segments.filter(s=>(s.activations||[]).length>0);
+  const rtSegs       = segsWithActs.filter(s=>s.activations.some(a=>a.isRT));
+  const batchSegs    = segsWithActs.filter(s=>s.activations.some(a=>!a.isRT));
+  const noActSegs    = D.segments.filter(s=>!(s.activations||[]).length);
+
+  // Activation type breakdown across all segments
+  const typeCount = {};
+  D.segments.forEach(s=>(s.activations||[]).forEach(a=>{
+    const t = a.type||"unknown";
+    typeCount[t]=(typeCount[t]||0)+1;
+  }));
+
+  const rtFailures = D.segments.flatMap(s=>
+    (s.activations||[]).filter(a=>a.isRT && a.consecutiveFailures>0)
+      .map(a=>({segName:s.name, ...a}))
+  );
+
   panel.innerHTML=`
-    <div class="gap-banner">
-      ⚠️ <strong>Activation connector data is not available via the tdx CLI.</strong>
-      The <code>tdx ps</code> commands do not return connector type, destination,
-      last activation time, or success/failure status. This is a known CLI limitation.
+    <div class="kpi-row" style="grid-template-columns:repeat(4,1fr)">
+      <div class="kpi"><div class="kpi-label">Segments with Activations</div>
+        <div class="kpi-value" style="color:${C.primary}">${fmt(segsWithActs.length)}</div></div>
+      <div class="kpi"><div class="kpi-label">RT Activations</div>
+        <div class="kpi-value" style="color:${C.lime}">${fmt(rtSegs.length)}</div></div>
+      <div class="kpi"><div class="kpi-label">Batch Activations</div>
+        <div class="kpi-value" style="color:${C.sec1}">${fmt(batchSegs.length)}</div></div>
+      <div class="kpi"><div class="kpi-label">RT Consecutive Failures</div>
+        <div class="kpi-value" style="color:${rtFailures.length>0?C.red:C.lime}">${fmt(rtFailures.length)}</div></div>
     </div>
-    <div class="info-banner">
-      To view activation details, visit each segment in the
-      <a href="https://console-next.eu01.treasuredata.com" target="_blank" style="color:#1d4ed8;font-weight:600">
+
+    ${Object.keys(typeCount).length ? `
+    <div style="margin-bottom:16px">
+      <div class="section-label">Connector Types in Use</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${Object.entries(typeCount).map(([t,n])=>
+          `<span class="badge badge-skip" style="background:${C.sec1};font-size:12px;padding:4px 10px">
+            ${esc(t)} (${n})
+          </span>`
+        ).join("")}
+      </div>
+    </div>` : ""}
+
+    ${rtFailures.length ? `
+    <div style="margin-bottom:16px">
+      <div class="section-label">⚠️ RT Activations with Consecutive Failures</div>
+      ${rtFailures.map(a=>`
+        <div class="anomaly-card anomaly-red">
+          <div style="font-weight:700;font-size:13px;color:#dc2626">${esc(a.segName)} — ${esc(a.name)}</div>
+          <div style="font-size:11px;color:#6b7280">${esc(a.type)} · ${a.consecutiveFailures} consecutive failures · Last: ${esc(a.lastAttempt||"—")}</div>
+          ${a.lastError?`<div style="font-size:11px;color:#dc2626;margin-top:2px;font-family:monospace">${esc(a.lastError)}</div>`:""}
+        </div>`).join("")}
+    </div>` : ""}
+
+    <div style="margin-bottom:16px">
+      <div class="section-label">All Activations by Segment</div>
+      ${segsWithActs.length===0
+        ? '<div style="color:#9ca3af;font-size:13px;padding:12px">No activations configured on any segment.</div>'
+        : segsWithActs.map(seg=>`
+          <div class="card" style="margin-bottom:8px">
+            <div class="card-header">
+              <span class="card-title">${esc(seg.name)}</span>
+              <span style="font-size:11px;color:#9ca3af;margin-left:auto">${seg.activations.length} activation${seg.activations.length!==1?"s":""}</span>
+            </div>
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead><tr style="color:#9ca3af">
+                <th style="text-align:left;padding:3px 8px 3px 0;font-size:10px;font-weight:700;text-transform:uppercase">Name</th>
+                <th style="text-align:left;padding:3px 8px 3px 0;font-size:10px;font-weight:700;text-transform:uppercase">Type</th>
+                <th style="text-align:left;padding:3px 8px 3px 0;font-size:10px;font-weight:700;text-transform:uppercase">Schedule</th>
+                <th style="text-align:left;padding:3px 0;font-size:10px;font-weight:700;text-transform:uppercase">Status</th>
+              </tr></thead>
+              <tbody>
+                ${seg.activations.map(a=>`
+                  <tr style="border-top:1px solid #f3f4f6">
+                    <td style="padding:5px 8px 5px 0">${esc(a.name)}</td>
+                    <td style="padding:5px 8px 5px 0;color:#6b7280">${esc(a.type||a.connection||"—")}</td>
+                    <td style="padding:5px 8px 5px 0;color:#6b7280">${esc(a.scheduleType||"—")}</td>
+                    <td style="padding:5px 0">
+                      ${a.isRT
+                        ? (a.consecutiveFailures>0
+                            ? `<span class="badge badge-red">🔴 ${a.consecutiveFailures} failures</span>`
+                            : (a.lastStatus==="true"
+                                ? `<span class="badge badge-green">✅ OK</span>`
+                                : `<span class="badge badge-skip">—</span>`))
+                        : `<span class="badge badge-skip" title="Batch run history not available via CLI">Config only</span>`}
+                    </td>
+                  </tr>`).join("")}
+              </tbody>
+            </table>
+          </div>`).join("")}
+    </div>
+
+    <div class="info-banner" style="margin-top:8px">
+      ℹ️ <strong>Batch activation run history</strong> is not available via the tdx CLI —
+      only configuration is shown. RT activation status comes from
+      <code>cdp_audience_&lt;id&gt;_rt.activations</code> table (last 7 days).
+      For full activation history visit the
+      <a href="https://console-next.eu01.treasuredata.com" target="_blank" style="color:#1d4ed8">
         Treasure Data Console ↗
       </a>
-      and navigate to the Activations tab.
-    </div>
-    <div style="margin-bottom:16px">
-      <div class="section-label">Segments with Child Segments (proxy for activation activity)</div>
-      <div class="seg-grid" id="act-grid"></div>
     </div>`;
-
-  // Show segments with child segments as a proxy for "active" segments
-  const activeSegs=D.segments.filter(s=>s.childSegmentCount>0)
-    .sort((a,b)=>b.childSegmentCount-a.childSegmentCount).slice(0,20);
-  const actGrid=document.getElementById("act-grid");
-  if(!activeSegs.length){
-    actGrid.innerHTML='<div style="color:#9ca3af;font-size:13px;padding:20px">No child segments found — no activations configured state.</div>';
-    return;
-  }
-  actGrid.innerHTML=activeSegs.map(seg=>`
-    <div class="seg-card ${seg.health.toLowerCase()}" onclick="openDrill('${seg.id}')">
-      <div class="seg-name" title="${esc(seg.name)}">${esc(seg.name)}</div>
-      <div class="seg-meta">${badge(seg.health)}</div>
-      <div class="seg-stats">
-        <div class="seg-stat"><span class="seg-stat-label">Child Segments</span>
-          <span class="seg-stat-value">${seg.childSegmentCount}</span></div>
-        <div class="seg-stat"><span class="seg-stat-label">Profiles</span>
-          <span class="seg-stat-value">${fmt(seg.population)}</span></div>
-        <div class="seg-stat"><span class="seg-stat-label">Last Refresh</span>
-          <span class="seg-stat-value">${relTime(seg.matrixUpdatedAt)}</span></div>
-      </div>
-    </div>`
-  ).join("");
 }
 
 // ── Tab: Activity Feed ──────────────────────────────────────────────────────
@@ -694,7 +866,7 @@ function buildAnomalies(){
       <div class="section-label">Anomalies Not Detectable via CLI</div>
       <div style="font-size:12px;color:#6b7280;background:#f9fafb;border:1px solid #e5e7eb;
                   border-radius:8px;padding:12px">
-        <div style="margin-bottom:6px">⚪ <strong>Consecutive activation failures</strong> — requires activation history (not in tdx CLI)</div>
+        <div style="margin-bottom:6px">⚪ <strong>Batch activation run history</strong> — only config available via tdx sg pull YAML (no run status)</div>
         <div>⚪ <strong>Child segment size outliers</strong> — requires historical baseline (not available on first run)</div>
       </div>
     </div>`;
@@ -738,22 +910,24 @@ HEALTH SUMMARY:
   ⚠️ Delayed:     <N>
   🔴 Overdue:     <N>
 
+ACTIVATION SUMMARY:
+  Segments with activations: <N>
+  RT activations (with status): <N>
+  Batch activations (config only): <N>
+  RT consecutive failures: <N>
+
 Commands run:
-  tdx ps list --json                  → <N> segments retrieved
-  tdx ps view × <N>                   → database names retrieved
-  tdx ps use + tdx sg list × <N>      → <N> total child segments across <M> parent segments
-  ai_usage.data_quality_flags query   → <N> quality flags retrieved (or "table not found — uc-data-quality-monitor not run")
+  tdx ps list --json                     → <N> segments retrieved
+  tdx ps view × <N>                      → database names retrieved
+  tdx ps use + tdx sg list × <N>         → <N> total child segments
+  tdx ps use + tdx sg pull --yes × <N>   → <N> activation configs retrieved
+  tdx connection list                    → connections verified
+  cdp_audience_<id>_rt.activations × <N> → RT activation status (last 7d)
+  ai_usage.data_quality_flags            → <N> quality flags (or "not found")
 
 ANOMALIES: <N> total
-  🔴 <segment_name>: not_refreshed — <detail>
-  🟡 <segment_name>: delayed — <detail>
-
-DATA GAPS (documented):
-  - Activation connector details: not available via tdx CLI
-  - Last run success/fail: not in tdx ps — use tdx wf sessions if workflow name known
-  - Child segment author: not in tdx sg list output
-  - Consecutive failures: not detectable without activation history
-  - Child size outliers: no baseline on first run
+  🔴 <segment>: rt_activation_failures — <N> consecutive failures on <activation>
+  🟡 <segment>: delayed — last refresh <X>h ago (threshold: <Y>h)
 ```
 
 ---
@@ -763,15 +937,16 @@ DATA GAPS (documented):
 - [ ] Dashboard renders for accounts with 1–20+ parent segments (pagination handles >20)
 - [ ] Health status calculated from `matrixUpdatedAt` vs `scheduleType` — NOT hardcoded
 - [ ] Anomaly flags surface automatically without user prompting
-- [ ] Activation Summary tab exists — shows "not available via CLI" state with console link
+- [ ] Activation Summary tab shows real data: batch config from `tdx sg pull` YAML + RT status from `_rt.activations`
+- [ ] RT consecutive failures detected and shown as RED anomalies
+- [ ] "No activations configured" state shown when no activations found (ticket requirement)
+- [ ] Batch activation config shown (name, connector, schedule) — run history documented as unavailable
 - [ ] Activity Feed shows child segments with time and size (author documented as unavailable)
-- [ ] Drill-down opens on card click — shows database, child segments, quality flags
+- [ ] Drill-down opens on card click — shows database, activations, child segments, quality flags
 - [ ] `uc-rfm-segmentation` gap documented — drill-down uses `parent-segment-analysis`
 - [ ] `scheduleType: "none"` RED cards carry "verify if refresh expected" note
-- [ ] Consecutive failure and child size anomaly gaps documented in Anomalies tab
 - [ ] `</script>` XSS injection prevented via `ensure_ascii=True` + replace
 - [ ] Performance: user warned about time estimate before running 140 segments
-- [ ] Context side effect (`tdx ps use`) documented
 - [ ] Usage logged to `ai_usage.skills_usage_tracker`
 - [ ] HTML written with date-stamped filename, user told to open in external browser
 
@@ -780,18 +955,24 @@ DATA GAPS (documented):
 ## Verified CLI Syntax (tested on eu01)
 
 ```bash
-tdx ps list --json                    # all segments — returns scheduleType, matrixUpdatedAt, url
+tdx ps list --json                    # all segments — scheduleType, matrixUpdatedAt, url
 tdx ps list "<pattern>" --json        # filtered — supports * and ?
-tdx ps view "<name>" --json           # single segment — returns master.parentDatabaseName
-tdx ps use "<name>"                   # set context (required before tdx sg list)
+tdx ps view "<name>" --json           # single segment — master.parentDatabaseName
+tdx ps use "<name>"                   # set context (required before tdx sg commands)
 tdx sg list --json                    # child segments (requires ps context)
+tdx sg pull --yes                     # pull segment YAMLs incl. activations: block
+tdx connection list                   # list all configured connections (name + type)
 ```
+
+**Activation data sources:**
+- Batch activations: `tdx sg pull --yes` → `activations:` block in segment YAML (config only, no run history)
+- RT activations: `cdp_audience_<id>_rt.activations` table → `activation_name`, `activation_type`, `delivered`, `status`, `error`, `time`
+- RT consecutive failures: computed via SQL window function over `delivered` column
 
 **Fields available in `tdx ps list --json`:** `name`, `population`, `scheduleType`,
 `matrixUpdatedAt`, `updatedAt`, `createdAt`, `url`
 
 **Fields NOT available via tdx CLI:**
-- Activation connector type, destination, last activation time, success/failure
-- Last workflow run status (use `tdx wf sessions <project>` if project name known)
+- Batch activation run history (last run time, success/fail)
+- Last PS workflow run status (use `tdx wf sessions <project>` if workflow name known)
 - Child segment author (`createdBy`)
-- Consecutive activation failure count
