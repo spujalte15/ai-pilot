@@ -192,7 +192,14 @@ tdx query --database <DB> \
    FROM <TABLE>" 2>&1
 ```
 
-Classify against fill rate thresholds. Use CUSTOM_THRESHOLDS if provided, otherwise use defaults (RED < 80%, AMBER 80–95%). Record each result in `FILL_RATE_RESULTS`.
+Classify against fill rate thresholds. Use CUSTOM_THRESHOLDS if provided, otherwise use defaults (RED < 80%, AMBER 80–95%).
+
+Store per key column: `{column, totalRows, nonNullCount, fillRatePct, status, querySQL}` where:
+- `totalRows` = the `total_rows` value from the query result
+- `nonNullCount` = the `non_null_count` value from the query result  
+- `querySQL` = the exact SQL string that was run (substitute the real DB/TABLE/COLUMN names)
+
+Record each result in `FILL_RATE_RESULTS`.
 
 Write each fill rate result to `dq_metric_history` so `lastHealthy` queries and trend lines work:
 
@@ -292,6 +299,11 @@ tdx query --database <cdp_unification_db> \
    FROM (SELECT leader_id, COUNT(*) AS cnt FROM <canonical_id>_id_graph GROUP BY leader_id)" 2>&1
 ```
 
+Store as `{stitchingTotal, stitchingWithId, coveragePct, stitchingQuerySQL}` — use these exact field names to match the Python data model:
+- `stitchingTotal` = the `total` value from the query result
+- `stitchingWithId` = the `with_canonical_id` value from the query result
+- `stitchingQuerySQL` = the exact SQL string run with DB/TABLE/COLUMN substituted
+
 Classify against stitching thresholds. Write to history:
 ```bash
 tdx query --database ai_usage \
@@ -317,6 +329,8 @@ tdx query --database <DB> \
    FROM <TABLE>" 2>&1
 ```
 
+Store: `{totalRows, duplicateCount, duplicateRatePct, querySQL}` where `querySQL` is the exact SQL string run.
+
 If no primary key was identified in Step 2: skip this check and record status = SKIP.
 
 Write to history:
@@ -340,11 +354,21 @@ For each check result assign GREEN/AMBER/RED/SKIP. Build `ANOMALIES` list — ev
   checkType:   "fill_rate | row_count | stitching_coverage | duplicate_rate",
   column:      "<column name or 'row_count'>",
   actualValue: "72.3%",
+  rawNumbers:  "7,130 of 9,726 rows",   // e.g. "non_null=7130 / total=9726" or "current=9726 / previous=10826"
   threshold:   "80%",
   severity:    "RED",
-  lastHealthy: "<result from history query below>"
+  lastHealthy: "<result from history query below>",
+  querySQL:    "SELECT COUNT(*) AS total_rows, COUNT(email) AS non_null_count ... FROM <DB>.<TABLE>"
 }
 ```
+
+**For `rawNumbers`** — format the stored raw counts as a readable string:
+- Fill rate: `"non_null=<nonNullCount> / total=<totalRows>"`
+- Row count: `"current=<CURRENT_COUNT> / previous=<prev>" `
+- Stitching: `"with_id=<withCanonicalId> / total=<total>"`
+- Dedup: `"duplicates=<duplicateCount> / total=<totalRows>"`
+
+**For `querySQL`** — use the exact SQL that was run for this check (already stored per check above).
 
 **For `lastHealthy`** — query `dq_metric_history` for each anomalous check:
 ```bash
@@ -436,13 +460,20 @@ monitor_data = {
       "rowCountChangePct": 0,   # computed from history
       "rowCountStatus": "GREEN",
       "fillRates": [
-        # {"column": "email", "fillRatePct": 98.2, "status": "GREEN"}
+        # {"column": "email", "totalRows": 9726, "nonNullCount": 9528, "fillRatePct": 98.2, "status": "GREEN",
+        #  "querySQL": "SELECT COUNT(*) AS total_rows, COUNT(email) AS non_null_count, ROUND(COUNT(email)*100.0/COUNT(*),2) AS fill_rate_pct FROM <DB>.<TABLE>"}
       ],
       "stitchingCoveragePct": None,  # None if not applicable
+      "stitchingTotal": None,        # total rows in master table
+      "stitchingWithId": None,       # rows with canonical ID
+      "stitchingQuerySQL": None,     # the SQL that was run
       "stitchingStatus": "SKIP",
       "mergeRatePct": None,
       "largestCluster": None,
       "duplicateRatePct": 0,
+      "duplicateTotalRows": 0,       # total rows checked
+      "duplicateCount": 0,           # number of duplicate rows
+      "duplicateQuerySQL": None,     # the SQL that was run
       "duplicateStatus": "GREEN",
       "overallStatus": "GREEN",  # worst of all checks for this table
     }
@@ -638,6 +669,11 @@ function buildOverview(){
   });
 }
 
+function toggleSQL(id){
+  const el=document.getElementById(id);
+  if(el) el.style.display=el.style.display==="none"?"block":"none";
+}
+
 function buildTables(){
   const panel = document.getElementById("tab-tables");
   if(!D.tables||!D.tables.length){panel.innerHTML='<div style="color:#9ca3af">No tables in scope.</div>';return;}
@@ -654,9 +690,14 @@ function buildTables(){
     const fillRows = (t.fillRates||[]).map(fr=>
       `<tr>
         <td style="font-family:monospace">${esc(fr.column)}</td>
-        <td>${fr.fillRatePct!=null?fr.fillRatePct+"%":"—"}</td>
+        <td>${fr.fillRatePct!=null?fr.fillRatePct+"%":"—"}
+          ${fr.nonNullCount!=null?`<span style="font-size:10px;color:#9ca3af;display:block">${fmt(fr.nonNullCount)} of ${fmt(fr.totalRows)}</span>`:""}
+        </td>
         <td>${fr.fillRatePct!=null?fillBar(fr.fillRatePct,fr.status):""}</td>
         <td>${badge(fr.status)}</td>
+        <td><button onclick="toggleSQL('${esc(fr.column)}-sql-${ti}')" style="font-size:9px;text-decoration:underline;color:#9ca3af;background:none;border:none;cursor:pointer">SQL</button>
+          <div id="${esc(fr.column)}-sql-${ti}" style="display:none;font-size:10px;font-family:monospace;color:#6b7280;background:#f3f4f6;padding:4px 6px;border-radius:4px;margin-top:2px;word-break:break-all">${esc(fr.querySQL||"")}</div>
+        </td>
        </tr>`
     ).join("");
     return `<div class="card" style="border-left:4px solid ${lc}">
@@ -680,16 +721,18 @@ function buildTables(){
         <div>
           <div style="font-size:10px;color:#9ca3af;font-weight:700;text-transform:uppercase">ID Stitching</div>
           <div style="font-size:18px;font-weight:800">${t.stitchingCoveragePct!=null?t.stitchingCoveragePct+"%":"N/A"}</div>
+          ${t.stitchingWithId!=null?`<div style="font-size:10px;color:#9ca3af">${fmt(t.stitchingWithId)} of ${fmt(t.stitchingTotal)}</div>`:""}
           ${t.stitchingCoveragePct!=null?badge(t.stitchingStatus):""}
         </div>
         <div>
           <div style="font-size:10px;color:#9ca3af;font-weight:700;text-transform:uppercase">Dup Rate</div>
           <div style="font-size:18px;font-weight:800">${t.duplicateRatePct!=null?t.duplicateRatePct+"%":"N/A"}</div>
+          ${t.duplicateCount!=null?`<div style="font-size:10px;color:#9ca3af">${fmt(t.duplicateCount)} of ${fmt(t.duplicateTotalRows)} dupes</div>`:""}
           ${t.duplicateStatus!=="SKIP"?badge(t.duplicateStatus):""}
         </div>
       </div>
       ${fillRows.length?`<table class="metric-table">
-        <thead><tr><th>Column</th><th>Fill Rate</th><th>Bar</th><th>Status</th></tr></thead>
+        <thead><tr><th>Column</th><th>Fill Rate</th><th>Bar</th><th>Status</th><th>Query</th></tr></thead>
         <tbody>${fillRows}</tbody>
       </table>`:'<div style="font-size:12px;color:#9ca3af">No key columns identified.</div>'}
     </div>`;
@@ -714,7 +757,9 @@ function buildAnomalies(){
       <div style="font-size:11px;color:#6b7280;margin-top:2px">
         Check: <strong>${esc(a.checkType)}</strong> · Actual: <strong>${esc(a.actualValue)}</strong> · Threshold: ${esc(a.threshold)}
       </div>
+      ${a.rawNumbers?`<div style="font-size:11px;color:#374151;margin-top:2px;font-family:monospace">${esc(a.rawNumbers)}</div>`:""}
       <div style="font-size:11px;color:#2563eb;margin-top:4px">Last healthy: ${esc(a.lastHealthy)}</div>
+      ${a.querySQL?`<details style="margin-top:4px"><summary style="font-size:10px;color:#9ca3af;cursor:pointer">Show query evidence</summary><div style="font-size:10px;font-family:monospace;color:#6b7280;background:#f3f4f6;padding:4px 6px;border-radius:4px;margin-top:2px;word-break:break-all">${esc(a.querySQL)}</div></details>`:""}
     </div>`
   ).join("");
 
@@ -800,14 +845,18 @@ Run:     <timestamp> | ID: <RECORD_ID>
 Databases: <list>
 Tables checked: <N>
 
-HEALTH SCORECARD:
+HEALTH SCORECARD (with evidence):
   <db>.<table>  [GREEN|AMBER|RED]
-    Fill rate <col>:     98.2%  ✅ GREEN
-    Fill rate <col>:     71.3%  🔴 RED — below 80% threshold
-    Row count:           9,726  ✅ GREEN (+0.3% vs last run)
-    Row count trend:     ↗ stable (7-run history available)
-    Duplicate rate:      0.2%   ✅ GREEN
-    ID stitching:        89.7%  🟡 AMBER — below 90% threshold
+    Fill rate <col>:     98.2%  (non_null=9528 / total=9726)  ✅ GREEN
+      Query: SELECT COUNT(*) AS total_rows, COUNT(<col>) AS non_null_count, ... FROM <db>.<table>
+    Fill rate <col>:     71.3%  (non_null=7130 / total=9726)  🔴 RED — below 80% threshold
+      Query: SELECT COUNT(*) AS total_rows, COUNT(<col>) AS non_null_count, ... FROM <db>.<table>
+    Row count:           9,726  (prev=9,698)  ✅ GREEN (+0.3% vs last run)
+      Query: SELECT COUNT(*) AS row_count FROM <db>.<table>
+    Duplicate rate:      0.2%   (dupes=19 / total=9726)  ✅ GREEN
+      Query: SELECT COUNT(*)-COUNT(DISTINCT <pk>) AS duplicate_count, ... FROM <db>.<table>
+    ID stitching:        89.7%  (with_id=8724 / total=9726)  🟡 AMBER — below 90% threshold
+      Query: SELECT COUNT(*) AS total, COUNT(<canonical_id_col>) AS with_canonical_id, ... FROM <db>.<table>
 
 ANOMALIES: <N> total (<N> critical, <N> warnings)
   🔴 <table>.<col>: fill_rate 71.3% < 80% — last healthy: <date or Unknown>
@@ -827,7 +876,11 @@ Before saying "done", verify every item:
 - [ ] Canonical ID column discovered dynamically in Step 2, not hardcoded as `cdp_customer_id`
 - [ ] User confirmed scope before checks ran
 - [ ] Thresholds are the user's values (or documented defaults)
-- [ ] Each anomaly shows: specific value, threshold, and last healthy timestamp
+- [ ] Each anomaly shows: specific value, threshold, last healthy timestamp, raw numbers, and query SQL evidence
+- [ ] Table Health tab shows raw counts (e.g. "7,130 of 9,726") alongside percentages
+- [ ] "Show query" toggle expands the exact SQL run for fill rate per column
+- [ ] "Show query evidence" expands in anomaly cards for every RED/AMBER item
+- [ ] Step 6 plain-text summary includes raw numbers and query used per metric
 - [ ] Row count trend over last 7 runs displayed (sparkline in Table Health tab)
 - [ ] "First run — baseline established" shown if no history exists
 - [ ] Row count **spikes** flagged (>50% RED, >20% AMBER) — not just drops
