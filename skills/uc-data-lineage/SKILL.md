@@ -39,50 +39,50 @@ Before starting, note these gaps:
 
 ---
 
-## Step 0 — Log Invocation (Inline Tracking — No Hooks)
+## Step 0 — Log Invocation
 
-Run silently before any other work. Do not block on failure.
-This mirrors the `skill-usage-tracker.md` schema exactly: `(id, user_id, account_id, skill_name)`.
+**THIS STEP IS MANDATORY. Execute it completely and confirm it succeeded before moving to Step 1. Do NOT merge this step with any other step.**
 
-**Sub-step 0a — Ensure TD credentials are available first.**
-In Treasure AI Studio the credential endpoint may not be pre-loaded. Request it explicitly before running any bash:
+### 0a — Request TD credentials (separate tool call)
 
-```
-Request credential: td_api_production_eu01
-```
+Call `mcp__tas__request_credential` with credential name `td_api_production_eu01`.
+Wait for the green "Authenticated" confirmation before proceeding.
+Do not run any bash until this succeeds.
 
-If the MCP credential tool is available (`mcp__tas__request_credential`), call it with `td_api_production_eu01`. Wait for confirmation before proceeding to 0b.
+### 0b — Log to tracking table (separate bash call)
 
-**Sub-step 0b — Run tracking once credentials are confirmed.**
+Run this as its own bash command — do not combine with Step 1 or Step 2:
 
 ```bash
 export TDX_ACCESS_TOKEN=$(curl -sf http://172.30.0.1:18080/credentials/td_api_production_eu01)
 export TDX_SITE=eu01
 
-# Verify token loaded — abort tracking silently if empty
-[ -z "$TDX_ACCESS_TOKEN" ] && exit 0
-
-# Resolve user identity
 TD_STATUS=$(tdx status 2>/dev/null)
 USER_ID=$(echo "$TD_STATUS" | grep "^User:" | awk '{print $2}')
 ACCOUNT_ID=$(echo "$TD_STATUS" | grep "^Account ID:" | awk '{print $3}')
 RECORD_ID=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null || echo "$(date +%s)-$$")
 
-# Ensure ai_usage database and table exist (idempotent)
 tdx api -X POST /v3/database/create/ai_usage 2>/dev/null || true
 tdx api -X POST /v3/table/create/ai_usage/skills_usage_tracker/log 2>/dev/null || true
 tdx api -X POST \
   --data '{"schema":"[[\"id\",\"string\"],[\"user_id\",\"string\"],[\"account_id\",\"string\"],[\"skill_name\",\"string\"]]"}' \
   /v3/table/update-schema/ai_usage/skills_usage_tracker 2>/dev/null || true
 
-# Insert usage record — tdx query INSERT confirmed working on eu01
 tdx query --database ai_usage \
   "INSERT INTO skills_usage_tracker (id, user_id, account_id, skill_name) VALUES ('$RECORD_ID', '$USER_ID', '$ACCOUNT_ID', 'uc-data-lineage')" \
-  >/dev/null 2>&1 || true
+  2>&1
+
+echo "✅ Tracking complete — user: $USER_ID | record: $RECORD_ID"
 ```
 
-> **Note for Treasure AI Studio:** Pre/post hooks are not available. This inline Step 0 is the only tracking mechanism. Credentials must be requested explicitly (0a) before the bash block (0b) — if credentials are fetched inside the same bash block that uses them, TAS may not have them ready in time.
-> The `{customer_slug}_ai_poc_tracking.skill_usage` table referenced in the JIRA ticket maps to this same tracking pattern pending clarification from Sébastien Pujalte.
+### 0c — Confirm before continuing
+
+Output this line before moving to Step 1:
+```
+✅ Step 0 complete — uc-data-lineage invocation logged for <USER_ID>
+```
+
+Only proceed to Step 1 after outputting this confirmation.
 
 ---
 
