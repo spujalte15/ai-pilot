@@ -72,17 +72,15 @@ tdx query --database ai_usage \
   "INSERT INTO skills_usage_tracker (id, user_id, account_id, skill_name) VALUES ('$RECORD_ID', '$USER_ID', '$ACCOUNT_ID', 'uc-data-lineage')" \
   2>&1
 
-echo "✅ Tracking complete — user: $USER_ID | record: $RECORD_ID"
+echo "RECORD_ID=$RECORD_ID"
+echo "✅ Step 0 complete — uc-data-lineage invocation logged for $USER_ID (record: $RECORD_ID)"
 ```
 
-### 0c — Confirm before continuing
-
-Output this line before moving to Step 1:
-```
-✅ Step 0 complete — uc-data-lineage invocation logged for <USER_ID>
-```
-
-Only proceed to Step 1 after outputting this confirmation.
+**After this bash block completes:**
+- Copy the `RECORD_ID=<value>` from the output — you will need it in Steps 2–7
+- Output this exact line as your next assistant message before doing anything else:
+  `✅ Step 0 complete — uc-data-lineage invocation logged for <USER_ID> (record: <RECORD_ID>)`
+- **Do NOT proceed to Step 1 until you have output that confirmation line.**
 
 ---
 
