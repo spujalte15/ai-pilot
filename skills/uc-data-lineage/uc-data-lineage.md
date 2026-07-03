@@ -308,18 +308,21 @@ If any column's origin cannot be traced back to a raw table:
 
 > `uc-data-quality-monitor` is not yet in the Treasure AI Studio marketplace. This step is conditional.
 
-Check whether the quality flags table exists:
+Check whether the quality flags table exists in `ai_usage` (written by `uc-data-quality-monitor`):
 
 ```bash
-tdx tables "<customer_db>.*" --json  # look for data_quality_flags or similar
+export TDX_ACCESS_TOKEN=$(curl -sf http://172.30.0.1:18080/credentials/td_api_production_eu01)
+export TDX_SITE=eu01
+tdx tables "ai_usage.*" --json 2>&1 | grep "data_quality_flags" || echo "NOT FOUND"
 ```
 
-If a table named `data_quality_flags` (or equivalent) exists in the customer's tracking database:
+If found, query only the latest run's flags (use MAX run_id to avoid stale flags from previous runs):
 
 ```sql
-SELECT table_name, issue_type, severity
-FROM <tracking_db>.data_quality_flags
-WHERE severity IN ('HIGH', 'CRITICAL')
+SELECT table_name, issue_type, severity, actual_value, threshold
+FROM ai_usage.data_quality_flags
+WHERE run_id = (SELECT MAX(run_id) FROM ai_usage.data_quality_flags)
+  AND severity IN ('HIGH', 'CRITICAL')
 ```
 
 Attach the results to the relevant layer nodes in the dashboard as ⚠️ badges.
