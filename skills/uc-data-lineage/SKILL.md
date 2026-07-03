@@ -44,35 +44,45 @@ Before starting, note these gaps:
 Run silently before any other work. Do not block on failure.
 This mirrors the `skill-usage-tracker.md` schema exactly: `(id, user_id, account_id, skill_name)`.
 
+**Sub-step 0a — Ensure TD credentials are available first.**
+In Treasure AI Studio the credential endpoint may not be pre-loaded. Request it explicitly before running any bash:
+
+```
+Request credential: td_api_production_eu01
+```
+
+If the MCP credential tool is available (`mcp__tas__request_credential`), call it with `td_api_production_eu01`. Wait for confirmation before proceeding to 0b.
+
+**Sub-step 0b — Run tracking once credentials are confirmed.**
+
 ```bash
 export TDX_ACCESS_TOKEN=$(curl -sf http://172.30.0.1:18080/credentials/td_api_production_eu01)
 export TDX_SITE=eu01
 
-# Resolve user identity — same method as skill-usage-tracker.md
+# Verify token loaded — abort tracking silently if empty
+[ -z "$TDX_ACCESS_TOKEN" ] && exit 0
+
+# Resolve user identity
 TD_STATUS=$(tdx status 2>/dev/null)
 USER_ID=$(echo "$TD_STATUS" | grep "^User:" | awk '{print $2}')
 ACCOUNT_ID=$(echo "$TD_STATUS" | grep "^Account ID:" | awk '{print $3}')
-RECORD_ID=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$(date +%s)-$$")
+RECORD_ID=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null || echo "$(date +%s)-$$")
 
 # Ensure ai_usage database and table exist (idempotent)
 tdx api -X POST /v3/database/create/ai_usage 2>/dev/null || true
 tdx api -X POST /v3/table/create/ai_usage/skills_usage_tracker/log 2>/dev/null || true
-
-# Set schema if not already set
 tdx api -X POST \
   --data '{"schema":"[[\"id\",\"string\"],[\"user_id\",\"string\"],[\"account_id\",\"string\"],[\"skill_name\",\"string\"]]"}' \
   /v3/table/update-schema/ai_usage/skills_usage_tracker 2>/dev/null || true
 
-# Insert usage record via streaming write API (tdx query INSERT is read-only in TD Trino)
-# Use bulk import API endpoint for the row insert
-tdx api -X POST \
-  --data "{\"columns\":[{\"name\":\"id\",\"value\":\"$RECORD_ID\"},{\"name\":\"user_id\",\"value\":\"$USER_ID\"},{\"name\":\"account_id\",\"value\":\"$ACCOUNT_ID\"},{\"name\":\"skill_name\",\"value\":\"uc-data-lineage\"}]}" \
-  /v3/table/import_with_id/ai_usage/skills_usage_tracker/json 2>/dev/null || true
+# Insert usage record — tdx query INSERT confirmed working on eu01
+tdx query --database ai_usage \
+  "INSERT INTO skills_usage_tracker (id, user_id, account_id, skill_name) VALUES ('$RECORD_ID', '$USER_ID', '$ACCOUNT_ID', 'uc-data-lineage')" \
+  >/dev/null 2>&1 || true
 ```
 
-> **Note for Treasure AI Studio:** Pre/post hooks are not available. This inline Step 0 is the only tracking mechanism. The `{customer_slug}_ai_poc_tracking.skill_usage` table referenced in the JIRA ticket maps to this same tracking pattern pending clarification from Sébastien Pujalte (ticket reporter) on whether a separate customer-scoped table is intended.
->
-> **Note on INSERT:** TD Trino (`tdx query`) is read-only and does not support DML INSERT. Row writes use the `/v3/table/import_with_id` REST endpoint above.
+> **Note for Treasure AI Studio:** Pre/post hooks are not available. This inline Step 0 is the only tracking mechanism. Credentials must be requested explicitly (0a) before the bash block (0b) — if credentials are fetched inside the same bash block that uses them, TAS may not have them ready in time.
+> The `{customer_slug}_ai_poc_tracking.skill_usage` table referenced in the JIRA ticket maps to this same tracking pattern pending clarification from Sébastien Pujalte.
 
 ---
 
