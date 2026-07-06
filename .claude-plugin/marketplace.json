@@ -1,0 +1,25 @@
+{
+  "name": "ai-pilot-eu",
+  "owner": {
+    "name": "Treasure Data SE EMEA",
+    "email": "biswadip.paul@treasure.ai"
+  },
+  "metadata": {
+    "version": "1.0.0",
+    "description": "Customer-facing POC skills for Treasure AI Studio (agent.eu01.treasure.ai). Built for the AI POC framework, Weeks 4\u20136 skill build phase. All skills are designed to run in Treasure AI Studio (no hooks, no filesystem writes, inline tracking via Step 0)."
+  },
+  "plugins": [
+    {
+      "name": "ai-pilot-eu",
+      "description": "Customer-facing Data Ops POC skills for Treasure AI Studio. Covers full pipeline lineage tracing, data quality, and transformation dashboards. Each skill generates a self-contained HTML dashboard and logs usage to ai_usage.skills_usage_tracker on eu01.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/uc-data-lineage",
+        "./skills/uc-data-quality-monitor",
+        "./skills/uc-parent-segment-overview",
+        "./skills/skill-usage-tracker"
+      ]
+    }
+  ]
+}
