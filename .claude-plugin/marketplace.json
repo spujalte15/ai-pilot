@@ -10,20 +10,84 @@
   },
   "plugins": [
     {
-      "name": "ai-pilot-eu",
-      "description": "Customer-facing Data Ops POC skills for Treasure AI Studio. Covers full pipeline lineage tracing, data quality, and transformation dashboards. Each skill generates a self-contained HTML dashboard and logs usage to ai_usage.skills_usage_tracker on eu01.",
+      "name": "uc-data-lineage",
+      "description": "Customer-facing pipeline lineage tracing from raw landing to parent segment.",
       "source": "./",
       "strict": false,
       "skills": [
-        "./skills/uc-data-lineage",
-        "./skills/uc-data-quality-monitor",
-        "./skills/uc-parent-segment-overview",
-        "./skills/skill-usage-tracker",
-        "./dash-journey-performance",
-        "./dash-unique-customer_view",
-        "./uc-campaign-analysis",
-        "./uc-campaign-brief-generator",
-        "./uc-persona-generation"
+        "./skills/uc-data-lineage"
+      ]
+    },
+    {
+      "name": "uc-data-quality-monitor",
+      "description": "CDP data health monitoring \u2014 fill rate, row counts, and ID stitching coverage.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/uc-data-quality-monitor"
+      ]
+    },
+    {
+      "name": "uc-parent-segment-overview",
+      "description": "High-level overview of parent segment health, freshness, and activation summaries.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/uc-parent-segment-overview"
+      ]
+    },
+    {
+      "name": "skill-usage-tracker",
+      "description": "Automated skill usage tracking and session telemetry for Treasure AI Studio.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/skill-usage-tracker"
+      ]
+    },
+    {
+      "name": "dash-journey-performance",
+      "description": "Journey conversion funnel, node performance, touchpoint engagement, and conversion trend.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/dash-journey-performance"
+      ]
+    },
+    {
+      "name": "dash-unique-customer-view",
+      "description": "360-degree customer profile dashboard covering identity, attributes, behaviors, and RFM.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/dash-unique-customer_view"
+      ]
+    },
+    {
+      "name": "uc-campaign-analysis",
+      "description": "Conversational campaign performance analysis with ROAS, CTR, and time-to-answer benchmarks.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/uc-campaign-analysis"
+      ]
+    },
+    {
+      "name": "uc-campaign-brief-generator",
+      "description": "Structured, agency-ready campaign brief generator with TD Audience Studio segment recommendations.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/uc-campaign-brief-generator"
+      ]
+    },
+    {
+      "name": "uc-persona-generation",
+      "description": "Data-driven customer persona generation based on actual behavioral clusters in Treasure Data.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/uc-persona-generation"
       ]
     }
   ]
