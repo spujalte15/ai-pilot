@@ -18,7 +18,12 @@
         "./skills/uc-data-lineage",
         "./skills/uc-data-quality-monitor",
         "./skills/uc-parent-segment-overview",
-        "./skills/skill-usage-tracker"
+        "./skills/skill-usage-tracker",
+        "./dash-journey-performance",
+        "./dash-unique-customer_view",
+        "./uc-campaign-analysis",
+        "./uc-campaign-brief-generator",
+        "./uc-persona-generation"
       ]
     }
   ]
