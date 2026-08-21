@@ -5,8 +5,8 @@
     "email": "biswadip.paul@treasure.ai"
   },
   "metadata": {
-    "version": "1.0.0",
-    "description": "Customer-facing POC skills for Treasure AI Studio (agent.eu01.treasure.ai). Built for the AI POC framework, Weeks 4\u20136 skill build phase. All skills are designed to run in Treasure AI Studio (no hooks, no filesystem writes, inline tracking via Step 0)."
+    "version": "1.1.0",
+    "description": "Customer-facing POC skills for Treasure Work and Treasure AI Studio. Includes model-agnostic organizational-context workflows with capability checks, evidence tracking, structured exceptions, approvals, and acceptance tests."
   },
   "plugins": [
     {
@@ -20,7 +20,7 @@
     },
     {
       "name": "uc-data-quality-monitor",
-      "description": "CDP data health monitoring \u2014 fill rate, row counts, and ID stitching coverage.",
+      "description": "CDP data health monitoring — fill rate, row counts, and ID stitching coverage.",
       "source": "./",
       "strict": false,
       "skills": [
@@ -38,7 +38,7 @@
     },
     {
       "name": "skill-usage-tracker",
-      "description": "Automated skill usage tracking and session telemetry for Treasure AI Studio.",
+      "description": "Automated skill usage tracking and session telemetry for supported runtimes.",
       "source": "./",
       "strict": false,
       "skills": [
@@ -88,6 +88,33 @@
       "strict": false,
       "skills": [
         "./skills/uc-persona-generation"
+      ]
+    },
+    {
+      "name": "cdp-architecture-map",
+      "description": "Model-agnostic, evidence-backed mapping of Treasure Data architecture, identifiers, joins, freshness, and glossary candidates for Treasure Work and Treasure AI Studio.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/cdp-architecture-map"
+      ]
+    },
+    {
+      "name": "business-glossary-build",
+      "description": "Model-agnostic requirements interview for business terms, metrics, identity, governance, Treasure Data mappings, conflicts, and approval.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/business-glossary-build"
+      ]
+    },
+    {
+      "name": "studio-context-file",
+      "description": "Builds governed organizational context and acceptance-test artifacts for Treasure Work and Treasure AI Studio with provenance, readiness gates, and structured exceptions.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/studio-context-file"
       ]
     }
   ]
