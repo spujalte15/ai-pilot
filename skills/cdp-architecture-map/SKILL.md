@@ -205,22 +205,27 @@ Use this structure:
 
 ## Parent Segments
 | Name | ID | Lifecycle status | Output database | Evidence ID |
+|---|---|---|---|---|
 
 ## Primary Output Database
 ### Customer Table
 | Column | Type | Technical role | Business meaning status | Evidence ID |
+|---|---|---|---|---|
 
 ### Behavior Tables
 | Table | Approx. rows | Observed structure | Business meaning status | Evidence ID |
+|---|---:|---|---|---|
 
 ## Identifiers and Join Contracts
 | Entity | Key | Table | Null rate | Uniqueness | Cardinality | Join coverage | Validation status | Evidence ID |
+|---|---|---|---:|---:|---|---:|---|---|
 
 ## Market Structure
 [Observed representation plus unresolved business interpretation]
 
 ## Freshness and Lineage
 | Object | Source | Expected refresh | Observed freshness | Status | Evidence ID |
+|---|---|---|---|---|---|
 
 ## Quality Findings
 [Duplicate, null, row-multiplication, stale-data, and sampling warnings]
@@ -230,9 +235,11 @@ Use this structure:
 
 ## Open Questions and Conflicts
 | ID | Question/conflict | Owner | Blocking? | Next action |
+|---|---|---|---|---|
 
 ## Glossary Candidates
 | Object | Candidate type | Why definition is needed | Evidence ID | Suggested owner |
+|---|---|---|---|---|
 
 Candidate types: opaque-name, categorical, score-field, behavior-table, metric-field,
 identifier, consent-field, market-variant, surprise.

@@ -156,6 +156,7 @@ Use this structure:
 
 ## Market and Organizational Structure
 | Code | Meaning | Scope/status | Source IDs |
+|---|---|---|---|
 
 ## Business Definitions
 ### [Term]
@@ -173,6 +174,7 @@ timezone, late-data handling, variation, mapping, owner, and source IDs]
 
 ## Data Model and Freshness
 | Object | Purpose | Key/grain | Freshness | Validation | Source IDs |
+|---|---|---|---|---|---|
 
 ## Identity and Join Rules
 [Canonical/source keys, entities, cardinality, match limits, deduplication,
@@ -190,18 +192,22 @@ prohibited analysis/export, and escalation owner]
 
 ## Conflict Register
 | ID | Conflict | Affected use | Temporary behavior | Owner | Status |
+|---|---|---|---|---|---|
 
 ## Active Use Cases and Persona Guidance
 | Persona | Task | Expected output | Success criteria | Restrictions |
+|---|---|---|---|---|
 
 ## Fact Register
 [CTX records]
 
 ## Approval Record
 | Domain | Approver | Decision | Date | Scope/conditions |
+|---|---|---|---|---|
 
 ## Change Log
 | Date | Change | Source/change request | Updated by |
+|---|---|---|---|---|
 ```
 
 Keep the retrieval artifact concise enough to retrieve effectively. Put detailed raw evidence in source artifacts, not in the context. Split very large contexts into stable topic files only if the target knowledge base supports multiple files; include a manifest and shared version.
@@ -220,6 +226,7 @@ Create `[company]-context-acceptance-tests.md`:
 - Evaluator:
 
 | ID | Category | Applicable? + reason | Criticality | Persona | Prompt | Pass criteria | Prohibited elements | Evidence/source IDs | Result | Notes |
+|---|---|---|---|---|---|---|---|---|---|---|
 ```
 
 Assess every category and record either `Applicable: yes` or `Applicable: no` with a reason:

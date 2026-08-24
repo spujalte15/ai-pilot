@@ -345,13 +345,17 @@ Use this structure:
 ## What the Assistant Must Not Assume
 ## Conflicts
 | ID | Claims | Sources | Owner | Blocking | Status |
+|---|---|---|---|---|---|
 ## Unresolved Items
 | Item | Resolution class | Owner | Review date/next step |
+|---|---|---|---|---|
 ## Acceptance Scenarios
 | ID | Persona | Prompt | Expected elements | Prohibited elements |
+|---|---|---|---|---|
 ## Source and Evidence Register
 ## Approval Record
 | Domain | Approver | Decision | Date | Scope/notes |
+|---|---|---|---|---|
 ## Change Log
 ```
 
